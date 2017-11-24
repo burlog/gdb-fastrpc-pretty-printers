@@ -83,7 +83,7 @@ class FRPCArrayPrinter:
         def __iter__(self):
             return self
 
-        def next(self):
+        def __next__(self):
             count = self.count
             self.count = self.count + 1
             if self.item == self.finish:
@@ -122,7 +122,7 @@ class FRPCStructIterator:
     def __len__(self):
         return int (self.size)
 
-    def next(self):
+    def __next__(self):
         if self.count == self.size:
             raise StopIteration
         result = self.node
@@ -144,6 +144,7 @@ class FRPCStructIterator:
             self.node = node
         return result
 
+
 class FRPCStructPrinter:
     "Print a FRPC::Struct_t"
 
@@ -156,12 +157,18 @@ class FRPCStructPrinter:
         def __iter__(self):
             return self
 
-        def next(self):
+        def __next__(self):
             if self.count % 2 == 0:
-                n = self.rbiter.next()
-                n = n.cast(self.type).dereference()['_M_value_field']
-                self.pair = n
-                item = n['first']
+                n = self.rbiter.__next__()
+                impl = n.cast(self.type).dereference()
+                try:
+                    pair_type = impl["_M_storage"].type.template_argument(0)
+                    pair_type = pair_type.pointer()
+                    self.pair = impl["_M_storage"]["_M_storage"] \
+                                .reinterpret_cast(pair_type)
+                except AttributeError:
+                    self.pair = impl._M_value_field
+                item = self.pair['first']
             else:
                 item = self.pair['second'].dereference()
                 item = item.cast(dynamic_type(item))
@@ -170,7 +177,7 @@ class FRPCStructPrinter:
             return result
 
     def __init__ (self, typename, val):
-        self.val = val.cast (gdb.lookup_type (typename))['structData']
+        self.val = val.cast(gdb.lookup_type(typename))['structData']
         self.typename = typename
 
     def to_string (self):
@@ -182,7 +189,7 @@ class FRPCStructPrinter:
         valuetype = self.val.type.template_argument(1)
         nodetype = gdb.lookup_type('std::_Rb_tree_node< std::pair< %s, %s > >' % (keytype, valuetype))
         nodetype = nodetype.pointer()
-        return self._iter (FRPCStructIterator (self.val), nodetype)
+        return self._iter(FRPCStructIterator(self.val), nodetype)
 
     def display_hint (self):
         return 'map'
@@ -199,7 +206,7 @@ class FRPCPoolPrinter:
         def __iter__(self):
             return self
 
-        def next(self):
+        def __next__(self):
             count = self.count
             self.count = self.count + 1
             if self.item == self.finish:
